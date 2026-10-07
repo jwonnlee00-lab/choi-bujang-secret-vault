@@ -29,7 +29,10 @@ export default async function handler(request, response) {
     .order('created_at', { ascending: true });
 
   if (error) {
-    return response.status(500).json({ error: 'NOTES_READ_FAILED' });
+    return response.status(500).json({
+      error: 'NOTES_READ_FAILED',
+      code: error.code || 'UNKNOWN'
+    });
   }
 
   return response.status(200).json({ notes: data });
