@@ -12,7 +12,11 @@ export default async function handler(request, response) {
   const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
 
   if (!supabaseUrl || !supabaseSecretKey) {
-    return response.status(500).json({ error: 'SERVER_CONFIGURATION_MISSING' });
+    return response.status(500).json({
+      error: 'SERVER_CONFIGURATION_MISSING',
+      hasSupabaseUrl: Boolean(supabaseUrl),
+      hasSupabaseSecretKey: Boolean(supabaseSecretKey)
+    });
   }
 
   const supabase = createClient(supabaseUrl, supabaseSecretKey, {
