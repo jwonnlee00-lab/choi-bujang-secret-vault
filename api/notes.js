@@ -1,4 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
+import { createLoginVerifier } from '../src/verify-login.mjs';
+
+const config = JSON.parse(readFileSync(new URL('../aleph.config.json', import.meta.url), 'utf8'));
 
 export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store');
@@ -10,13 +14,20 @@ export default async function handler(request, response) {
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
-
   if (!supabaseUrl || !supabaseSecretKey) {
-    return response.status(500).json({
-      error: 'SERVER_CONFIGURATION_MISSING',
-      hasSupabaseUrl: Boolean(supabaseUrl),
-      hasSupabaseSecretKey: Boolean(supabaseSecretKey)
-    });
+    return response.status(500).json({ error: 'SERVER_CONFIGURATION_MISSING' });
+  }
+
+  let verified;
+  try {
+    const verifyLogin = createLoginVerifier({ config, supabaseSecretKey });
+    verified = await verifyLogin(request.headers.authorization);
+  } catch {
+    return response.status(500).json({ error: 'LOGIN_VERIFIER_UNAVAILABLE' });
+  }
+
+  if (!verified) {
+    return response.status(401).json({ error: 'UNAUTHORIZED' });
   }
 
   const supabase = createClient(supabaseUrl, supabaseSecretKey, {
@@ -33,10 +44,7 @@ export default async function handler(request, response) {
     .order('created_at', { ascending: true });
 
   if (error) {
-    return response.status(500).json({
-      error: 'NOTES_READ_FAILED',
-      code: error.code || 'UNKNOWN'
-    });
+    return response.status(500).json({ error: 'NOTES_READ_FAILED' });
   }
 
   return response.status(200).json({ notes: data });
