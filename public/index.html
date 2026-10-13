@@ -16,6 +16,12 @@
     li { border: 1px solid #51667c; border-radius: 14px; padding: 17px 19px; background: #1a2a3d; }
     strong { display: block; font-size: 18px; margin-bottom: 5px; }
     li span { color: #bfd0e5; }
+    form { display: grid; gap: 12px; margin: 24px 0; }
+    input, button { font: inherit; padding: 12px; border-radius: 8px; }
+    input { border: 1px solid #51667c; background: #172538; color: #ecf4ff; }
+    button { cursor: pointer; border: 0; background: #8ad8df; color: #101a28; font-weight: 700; }
+    [hidden] { display: none !important; }
+    #auth-status { color: #ffe3e8; }
   </style>
 </head>
 <body>
@@ -24,29 +30,97 @@
     <h1>점령된 자료실</h1>
     <p>지금은 보호 장치가 없는 상태입니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
     <div class="notice">로그인하지 않은 방문자도 자료를 볼 수 있습니다. 공개 범위를 확인하고, 다음 제작 단계에서 접근을 차례로 막아 주세요.</div>
-    <ul id="notes" aria-live="polite"><li>가상 자료를 불러오는 중입니다.</li></ul>
+    <p id="auth-status" role="status" aria-live="polite">로그인 상태를 확인하는 중입니다.</p>
+    <form id="login-form" hidden>
+      <label for="email">이메일</label>
+      <input id="email" type="email" autocomplete="username" required>
+      <label for="password">비밀번호</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <button type="submit">로그인</button>
+    </form>
+    <button id="logout" type="button" hidden>로그아웃</button>
+    <ul id="notes" aria-live="polite"><li>로그인 후 자료를 볼 수 있습니다.</li></ul>
   </main>
   <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.117.2';
+
+    const supabase = createClient(
+      'https://gmbivtvylqbnxyomugaz.supabase.co',
+      'sb_publishable_ipKN9KbU0NZx-DCV_bEEcg_LGecVpI4'
+    );
     const list = document.querySelector('#notes');
-    try {
-      const response = await fetch('/api/notes', { cache: 'no-store' });
-      if (!response.ok) throw new Error('서버 자료를 읽을 수 없습니다.');
-      const data = await response.json();
-      if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
-      list.replaceChildren(...data.notes.map(note => {
-        const item = document.createElement('li');
-        const title = document.createElement('strong');
-        const content = document.createElement('span');
-        title.textContent = note.title;
-        content.textContent = note.content;
-        item.append(title, content);
-        return item;
-      }));
-    } catch (error) {
+    const status = document.querySelector('#auth-status');
+    const form = document.querySelector('#login-form');
+    const logout = document.querySelector('#logout');
+    const password = document.querySelector('#password');
+    let revision = 0;
+
+    function showMessage(message) {
       const item = document.createElement('li');
-      item.textContent = error.message;
+      item.textContent = message;
       list.replaceChildren(item);
     }
+
+    async function updateScreen(session) {
+      const current = ++revision;
+      const loggedIn = Boolean(session?.access_token);
+      form.hidden = loggedIn;
+      logout.hidden = !loggedIn;
+      password.value = '';
+      status.textContent = loggedIn
+        ? '로그인됨: ' + (session.user?.email ?? '사용자')
+        : '로그아웃 상태입니다.';
+      if (!loggedIn) {
+        showMessage('로그인 후 자료를 볼 수 있습니다.');
+        return;
+      }
+      showMessage('자료를 불러오는 중입니다.');
+      try {
+        const response = await fetch('/api/notes', {
+          cache: 'no-store',
+          headers: { Authorization: 'Bearer ' + session.access_token }
+        });
+        if (!response.ok) throw new Error(response.status === 401
+          ? '인증이 만료되었거나 유효하지 않습니다. 다시 로그인해 주세요.'
+          : '서버 자료를 읽을 수 없습니다.');
+        const data = await response.json();
+        if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
+        if (current !== revision) return;
+        list.replaceChildren(...data.notes.map(note => {
+          const item = document.createElement('li');
+          const title = document.createElement('strong');
+          const content = document.createElement('span');
+          title.textContent = note.title;
+          content.textContent = note.content;
+          item.append(title, content);
+          return item;
+        }));
+      } catch (error) {
+        if (current === revision) showMessage(error.message);
+      }
+    }
+
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      status.textContent = '로그인 확인 중입니다.';
+      const { error } = await supabase.auth.signInWithPassword({
+        email: document.querySelector('#email').value,
+        password: password.value
+      });
+      password.value = '';
+      if (error) status.textContent = '로그인 실패: ' + error.message;
+    });
+    logout.addEventListener('click', async () => {
+      const { error } = await supabase.auth.signOut();
+      if (error) status.textContent = '로그아웃 실패: ' + error.message;
+    });
+    supabase.auth.onAuthStateChange((_event, session) => {
+      // Schedule rendering outside the SDK callback.
+      setTimeout(() => { void updateScreen(session); }, 0);
+    });
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) status.textContent = '로그인 상태 확인 실패: ' + error.message;
+    else await updateScreen(session);
   </script>
 </body>
 </html>
