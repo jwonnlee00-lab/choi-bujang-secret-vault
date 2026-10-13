@@ -20,6 +20,9 @@
     input, button { font: inherit; padding: 12px; border-radius: 8px; }
     input { border: 1px solid #51667c; background: #172538; color: #ecf4ff; }
     button { cursor: pointer; border: 0; background: #8ad8df; color: #101a28; font-weight: 700; }
+    textarea { font: inherit; padding: 12px; border: 1px solid #51667c; border-radius: 8px; background: #172538; color: #ecf4ff; min-height: 90px; }
+    .actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    .actions button { padding: 8px 12px; }
     [hidden] { display: none !important; }
     #auth-status { color: #ffe3e8; }
   </style>
@@ -39,6 +42,18 @@
       <button type="submit">로그인</button>
     </form>
     <button id="logout" type="button" hidden>로그아웃</button>
+    <section id="editor" hidden>
+      <h2 id="editor-heading">메모 추가</h2>
+      <form id="note-form">
+        <label for="note-title">제목</label>
+        <input id="note-title" maxlength="200" required>
+        <label for="note-body">내용</label>
+        <textarea id="note-body"></textarea>
+        <button id="save-note" type="submit">메모 추가</button>
+        <button id="cancel-edit" type="button" hidden>수정 취소</button>
+      </form>
+      <p id="note-status" role="status" aria-live="polite"></p>
+    </section>
     <ul id="notes" aria-live="polite"><li>로그인 후 자료를 볼 수 있습니다.</li></ul>
   </main>
   <script type="module">
@@ -53,7 +68,42 @@
     const form = document.querySelector('#login-form');
     const logout = document.querySelector('#logout');
     const password = document.querySelector('#password');
+    const editor = document.querySelector('#editor');
+    const noteForm = document.querySelector('#note-form');
+    const noteTitle = document.querySelector('#note-title');
+    const noteBody = document.querySelector('#note-body');
+    const noteStatus = document.querySelector('#note-status');
+    const cancelEdit = document.querySelector('#cancel-edit');
+    const saveNote = document.querySelector('#save-note');
+    const editorHeading = document.querySelector('#editor-heading');
+    let editingId = null;
     let revision = 0;
+
+    function resetEditor() {
+      editingId = null;
+      noteForm.reset();
+      saveNote.textContent = '메모 추가';
+      editorHeading.textContent = '메모 추가';
+      cancelEdit.hidden = true;
+    }
+
+    async function notesRequest(path, method, payload) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('로그인이 필요합니다.');
+      const response = await fetch(path, {
+        method,
+        cache: 'no-store',
+        headers: {
+          Authorization: 'Bearer ' + session.access_token,
+          ...(payload === undefined ? {} : { 'Content-Type': 'application/json' })
+        },
+        ...(payload === undefined ? {} : { body: JSON.stringify(payload) })
+      });
+      if (!response.ok) throw new Error(response.status === 401
+        ? '인증이 만료되었거나 유효하지 않습니다. 다시 로그인해 주세요.'
+        : '메모 요청 실패 (HTTP ' + response.status + ')');
+      return response.json();
+    }
 
     function showMessage(message) {
       const item = document.createElement('li');
@@ -66,6 +116,11 @@
       const loggedIn = Boolean(session?.access_token);
       form.hidden = loggedIn;
       logout.hidden = !loggedIn;
+      editor.hidden = !loggedIn;
+      if (!loggedIn) {
+        resetEditor();
+        noteStatus.textContent = '';
+      }
       password.value = '';
       status.textContent = loggedIn
         ? '로그인됨: ' + (session.user?.email ?? '사용자')
@@ -86,19 +141,73 @@
         const data = await response.json();
         if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
         if (current !== revision) return;
+        if (!data.notes.length) {
+          showMessage('메모가 없습니다. 위에서 새 메모를 추가하세요.');
+          return;
+        }
         list.replaceChildren(...data.notes.map(note => {
           const item = document.createElement('li');
           const title = document.createElement('strong');
           const content = document.createElement('span');
           title.textContent = note.title;
           content.textContent = note.content;
-          item.append(title, content);
+          const actions = document.createElement('div');
+          actions.className = 'actions';
+          const edit = document.createElement('button');
+          edit.type = 'button';
+          edit.textContent = '수정';
+          edit.addEventListener('click', () => {
+            editingId = note.id;
+            noteTitle.value = note.title;
+            noteBody.value = note.body;
+            editorHeading.textContent = '메모 수정';
+            saveNote.textContent = '변경 저장';
+            cancelEdit.hidden = false;
+            noteStatus.textContent = '';
+            noteTitle.focus();
+          });
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.textContent = '삭제';
+          remove.addEventListener('click', async () => {
+            if (!confirm('이 메모를 삭제하시겠습니까?')) return;
+            noteStatus.textContent = '';
+            try {
+              await notesRequest('/api/notes/' + encodeURIComponent(note.id), 'DELETE');
+              if (editingId === note.id) resetEditor();
+              noteStatus.textContent = '삭제했습니다.';
+              const { data: { session } } = await supabase.auth.getSession();
+              await updateScreen(session);
+            } catch (error) { noteStatus.textContent = error.message; }
+          });
+          actions.append(edit, remove);
+          item.append(title, content, actions);
           return item;
         }));
       } catch (error) {
         if (current === revision) showMessage(error.message);
       }
     }
+
+    cancelEdit.addEventListener('click', resetEditor);
+    noteForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      saveNote.disabled = true;
+      noteStatus.textContent = '저장 중입니다.';
+      try {
+        const payload = { title: noteTitle.value, body: noteBody.value };
+        await notesRequest(editingId ? '/api/notes/' + encodeURIComponent(editingId) : '/api/notes',
+          editingId ? 'PUT' : 'POST', payload);
+        resetEditor();
+        const { data: { session } } = await supabase.auth.getSession();
+        await updateScreen(session);
+        noteStatus.textContent = '저장했습니다.';
+      } catch (error) {
+        noteStatus.textContent = error.message;
+      } finally {
+        saveNote.disabled = false;
+      }
+    });
 
     form.addEventListener('submit', async event => {
       event.preventDefault();
