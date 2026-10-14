@@ -110,3 +110,22 @@
 2. Supabase SQL Editor에서 `has_table_privilege`로 anon/authenticated의 notes 테이블 권한이 모두 false인지 확인합니다.
 3. 브라우저 또는 API 클라이언트에서 공개 publishable 키로 `originalApiUrl?select=id`에 직접 GET 요청하여 접근 거부(HTTP 401/403, permission denied)를 확인합니다.
 4. `npm run bundle`은 실제 배포에 대한 자기 점검 결과만 포함합니다. 이 확인은 운영 심판 판정과 별개입니다.
+
+
+## 6단계 저장점 — 등록 기기 판정 확인
+
+### 구현 내용
+- `src/decider.mjs`에 `device_registered` 규칙 추가
+- `deviceRegistered === true`이면 `allow`, 이유 코드 `approved`
+- 미등록(`false`) 또는 값이 없으면 `deny`, 이유 코드 `device_not_registered`
+- 기존 자료실 로그인과 메모 CRUD 기능 유지
+
+### 재현 및 확인 순서
+1. 프로젝트 루트에서 `npm run decider:test`를 실행한다.
+2. `등록 기기의 정상 요청`이 `통과`로 표시되는지 확인한다.
+3. `미등록 기기의 가상 요청`이 `통과`로 표시되는지 확인한다. 이는 내부적으로 `deny`와 `device_not_registered`를 비교한 결과다.
+
+### 검증 범위
+- 로컬 가상 요청 시험이며 실제 기기 등록이나 운영 심판 판정은 아니다.
+- 미등록 기기의 실제 공격 시험은 운영 심판에서 수행한다.
+- 별도의 접속 프로그램이나 인증서·CA·서명 키를 설치하거나 생성하지 않는다.
