@@ -63,8 +63,8 @@ export default async function handler(request, response) {
   }
 
   if (request.method === 'GET') {
-    // Stage 3 intentionally does not enforce owner_id on item access.
-    const { data, error } = await table.select(fields).eq('id', id).maybeSingle();
+    const { data, error } = await table.select(fields)
+      .eq('id', id).eq('owner_id', verified.userId).maybeSingle();
     if (error) return response.status(500).json({ error: 'NOTES_READ_FAILED' });
     if (!data) return response.status(404).json({ error: 'NOT_FOUND' });
     return response.status(200).json(out(data));
@@ -72,18 +72,20 @@ export default async function handler(request, response) {
 
   if (request.method === 'PUT') {
     const body = request.body ?? {};
-    if (typeof body.title !== 'string' || !body.title.trim() || typeof body.body !== 'string') {
+    if (typeof body.title !== 'string' || !body.title.trim() || typeof body.body !== 'string'
+        || Object.hasOwn(body, 'owner_id')) {
       return response.status(400).json({ error: 'INVALID_NOTE' });
     }
     const { data, error } = await table.update({
-      title: body.title, content: body.body
-    }).eq('id', id).select('id').maybeSingle();
+      title: body.title, content: body.body, owner_id: verified.userId
+    }).eq('id', id).eq('owner_id', verified.userId).select('id').maybeSingle();
     if (error) return response.status(500).json({ error: 'NOTES_WRITE_FAILED' });
     if (!data) return response.status(404).json({ error: 'NOT_FOUND' });
     return response.status(200).json({ id });
   }
 
-  const { data, error } = await table.delete().eq('id', id).select('id').maybeSingle();
+  const { data, error } = await table.delete()
+    .eq('id', id).eq('owner_id', verified.userId).select('id').maybeSingle();
   if (error) return response.status(500).json({ error: 'NOTES_DELETE_FAILED' });
   if (!data) return response.status(404).json({ error: 'NOT_FOUND' });
   return response.status(200).json({ id });
