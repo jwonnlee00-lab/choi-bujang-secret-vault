@@ -74,3 +74,22 @@
 4. `/data.json`은 비어 있는지, `/aleph.json`은 유지되는지 확인합니다.
 
 `npm run bundle`은 별도의 로컬 `bundle-notes.json`과 Git origin, 깨끗한 작업 트리, 현재 배포에 대한 자기 점검을 필요로 합니다. 이 파일은 Git에 커밋하지 않습니다. 실제로 확인하지 않은 로그인 사용자별 요청 결과는 통과로 기록하지 않습니다.
+
+
+## 4단계 저장점 — 로그인 사용자별 메모 소유권 보호
+
+- 3단계 Supabase Auth 로그인·로그아웃, 메모 CRUD 기능은 유지합니다.
+- `api/notes.js`의 개별 GET·PUT·DELETE는 검증된 사용자 ID와 DB의 `owner_id`가 같은 행에만 접근하도록 제한합니다. 타인 메모 ID는 `404 NOT_FOUND`로 거부합니다.
+- POST의 `owner_id`는 클라이언트 요청값이 아닌 검증된 사용자 ID로 저장합니다. PUT에서 전달한 `owner_id` 변경 시도는 거부하며, 기존 행과 변경할 행의 소유자 조건을 확인합니다.
+- 학습용 Supabase `public.notes`에 RLS를 적용했습니다. `anon`은 테이블 권한이 없고 `authenticated`에는 SELECT·INSERT·UPDATE·DELETE만 부여하며, 정책의 `auth.uid() = owner_id`로 자기 행만 허용합니다. 이는 Supabase SQL Editor에서 수동으로 실행·확인된 DB 설정이며 Git 저장소의 마이그레이션 파일로 관리하지 않습니다.
+- 서버 함수가 사용하는 Secret Key는 RLS를 우회할 수 있으므로 API 소유자 검사도 유지합니다.
+- 기존 공개 커밋과 과거 배포에 남은 노출 이력은 별개의 문제이며, 과거 노출이 해소됐다고 주장하지 않습니다.
+
+### 재확인 방법
+
+1. Vercel Production 배포에서 A와 B 계정으로 각각 로그인해 자기 메모 목록·추가·수정·삭제를 확인합니다.
+2. 인증된 B가 A 메모 ID로 개별 GET·PUT·DELETE 요청을 보내면 모두 `404 NOT_FOUND`로 거부되고 A의 원본이 유지되어야 합니다. 이 세 항목은 수동으로 확인했습니다.
+3. 무로그인 `GET /api/notes`는 `401 UNAUTHORIZED`, 정적 `/data.json`은 빈 메모 배열, `/aleph.json`은 현재 배포 식별 정보가 기대값입니다. 새 저장점 커밋 배포 뒤 다시 확인합니다.
+4. Supabase SQL Editor에서 `information_schema.role_table_grants`, `has_table_privilege`, `pg_policies`를 확인합니다. 학습 SQL 변경은 GitHub 배포에 포함되지 않습니다.
+
+`npm run bundle`은 깨끗한 로컬 Git 작업 트리, `origin`, 커밋되지 않은 로컬 `bundle-notes.json`, 현재 배포의 자기 점검을 필요로 합니다. 토큰·키·메모 본문은 제출 묶음에 넣지 않습니다.

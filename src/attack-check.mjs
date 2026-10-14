@@ -1,6 +1,6 @@
-// Stage 3 self-check: unauthenticated requests only; never expose note bodies or tokens.
+// Stage 4 self-check: unauthenticated requests only; never expose note bodies or tokens.
 export async function runAttackChecks(config) {
-  if (config.step !== 3) throw new Error('3단계 자기 점검 설정을 확인해 주세요.');
+  if (config.step !== 4) throw new Error('4단계 자기 점검 설정을 확인해 주세요.');
   const app = new URL(config.publicAppUrl);
   if (app.protocol !== 'https:' || !app.hostname.endsWith('.vercel.app')) {
     throw new Error('실제 HTTPS 배포 주소가 필요합니다.');
