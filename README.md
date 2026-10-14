@@ -93,3 +93,20 @@
 4. Supabase SQL Editor에서 `information_schema.role_table_grants`, `has_table_privilege`, `pg_policies`를 확인합니다. 학습 SQL 변경은 GitHub 배포에 포함되지 않습니다.
 
 `npm run bundle`은 깨끗한 로컬 Git 작업 트리, `origin`, 커밋되지 않은 로컬 `bundle-notes.json`, 현재 배포의 자기 점검을 필요로 합니다. 토큰·키·메모 본문은 제출 묶음에 넣지 않습니다.
+
+
+## 5단계 저장점 — 메모 자료 요청을 서버 함수 한곳으로 모으기
+
+- 브라우저 `public/index.html`의 메모 읽기·추가·수정·삭제는 기존 `/api/notes` 서버 함수로만 요청합니다. Supabase SDK는 로그인(Auth)용으로 유지합니다.
+- 서버 함수 `api/notes.js`는 토큰 인증, 사용자별 `owner_id` 검사 및 서버 전용 Supabase 설정을 유지합니다.
+- 학습 DB의 `public.notes` 테이블에서 `PUBLIC`, `anon`, `authenticated`에 부여된 권한을 `REVOKE ALL`로 회수했습니다. 다른 테이블은 변경하지 않았습니다. 적용 전후 `information_schema.role_table_grants`와 `has_table_privilege`를 수동 확인했고, 적용 후 anon/authenticated 역할의 유효 테이블 권한은 전부 false였습니다. DB 설정은 Git 커밋에 포함되지 않습니다.
+- A 계정의 읽기·추가·수정·삭제는 회수 후에도 웹 화면에서 정상 작동함을 사용자가 직접 확인했습니다.
+- 익명 publishable 키를 사용한 원본 `GET /rest/v1/notes?select=id` 요청은 HTTP 401, PostgreSQL `42501` (permission denied for table notes)로 거부됨을 사용자가 직접 확인했습니다. 본문이나 토큰을 Git에 기록하지 않습니다.
+- `aleph.config.json`의 `originalApiUrl`은 쿼리 없는 HTTPS 원본 메모 테이블 API 주소입니다. `judgeIssuer`, 로그인 발급자, 허용 라우트, Vercel 배포 주소는 유지합니다.
+
+### 재확인
+
+1. 현재 Production 배포에서 A 계정으로 로그인해 메모 조회·추가·수정·삭제를 시험하고, B 계정에서 A 메모 요청은 거부되는지 확인합니다.
+2. Supabase SQL Editor에서 `has_table_privilege`로 anon/authenticated의 notes 테이블 권한이 모두 false인지 확인합니다.
+3. 브라우저 또는 API 클라이언트에서 공개 publishable 키로 `originalApiUrl?select=id`에 직접 GET 요청하여 접근 거부(HTTP 401/403, permission denied)를 확인합니다.
+4. `npm run bundle`은 실제 배포에 대한 자기 점검 결과만 포함합니다. 이 확인은 운영 심판 판정과 별개입니다.
