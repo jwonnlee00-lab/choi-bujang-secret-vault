@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { createLoginVerifier } from '../src/verify-login.mjs';
+import { makeResourceId } from '../src/resource-id.mjs';
 
 const config = JSON.parse(readFileSync(new URL('../aleph.config.json', import.meta.url), 'utf8'));
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -10,6 +11,10 @@ export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store');
   const id = request.query?.id;
   const isItem = typeof id === 'string';
+  const resourceId = isItem
+    ? makeResourceId('note', id)
+    : makeResourceId('note', 'list');
+
   const methods = isItem ? ['GET', 'PUT', 'DELETE'] : ['GET', 'POST'];
   if (!methods.includes(request.method)) {
     response.setHeader('Allow', methods.join(', '));
@@ -39,13 +44,23 @@ export default async function handler(request, response) {
   });
   const table = supabase.from('notes');
   const fields = 'id, title, content, owner_id, created_at';
-  const out = note => ({ id: note.id, title: note.title, body: note.content });
+  const out = note => ({
+    id: note.id,
+    resourceId: makeResourceId('note', note.id),
+    title: note.title,
+    body: note.content
+  });
 
   if (request.method === 'GET' && !isItem) {
     const { data, error } = await table.select(fields)
-      .eq('owner_id', verified.userId).order('created_at', { ascending: true });
+      .eq('owner_id', verified.userId)
+      .order('created_at', { ascending: true });
+
     if (error) return response.status(500).json({ error: 'NOTES_READ_FAILED' });
-    return response.status(200).json({ notes: data.map(out) });
+    return response.status(200).json({
+      resourceId,
+      notes: data.map(out)
+    });
   }
 
   if (request.method === 'POST') {
@@ -59,12 +74,18 @@ export default async function handler(request, response) {
       id: noteId, title: body.title, content: body.body, owner_id: verified.userId
     });
     if (error) return response.status(500).json({ error: 'NOTES_WRITE_FAILED' });
-    return response.status(201).json({ id: noteId });
+    return response.status(201).json({
+      id: noteId,
+      resourceId: makeResourceId('note', noteId)
+    });
   }
 
   if (request.method === 'GET') {
     const { data, error } = await table.select(fields)
-      .eq('id', id).eq('owner_id', verified.userId).maybeSingle();
+      .eq('id', id)
+      .eq('owner_id', verified.userId)
+      .maybeSingle();
+
     if (error) return response.status(500).json({ error: 'NOTES_READ_FAILED' });
     if (!data) return response.status(404).json({ error: 'NOT_FOUND' });
     return response.status(200).json(out(data));
@@ -81,12 +102,18 @@ export default async function handler(request, response) {
     }).eq('id', id).eq('owner_id', verified.userId).select('id').maybeSingle();
     if (error) return response.status(500).json({ error: 'NOTES_WRITE_FAILED' });
     if (!data) return response.status(404).json({ error: 'NOT_FOUND' });
-    return response.status(200).json({ id });
+    return response.status(200).json({
+      id,
+      resourceId: makeResourceId('note', id)
+    });
   }
 
   const { data, error } = await table.delete()
     .eq('id', id).eq('owner_id', verified.userId).select('id').maybeSingle();
   if (error) return response.status(500).json({ error: 'NOTES_DELETE_FAILED' });
   if (!data) return response.status(404).json({ error: 'NOT_FOUND' });
-  return response.status(200).json({ id });
+  return response.status(200).json({
+    id,
+    resourceId: makeResourceId('note', id)
+  });
 }

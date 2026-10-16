@@ -3,6 +3,7 @@
 // 요청 본문의 userId, role, 기기 키, 토큰을 별도로 믿거나 저장하지 마세요.
 // 6단계 추가
 // 7단계 추가
+// 8단계 추가
 
 
 function inspectConnectionInput(request) {
@@ -46,11 +47,28 @@ function needsStepUp(connectionInput) {
   return unusualHour && unusualNetwork && manyReads;
 }
 
+export function isAllowedZone(request) {
+  const { service, method, route } = request;
 
+  if (service !== 'notes') {
+    return false;
+  }
+
+  if (method === 'GET' && route === 'GET /api/notes/:id') {
+    return true;
+  }
+
+  if (method === 'GET' && route === 'GET /api/notices/:id') {
+    return true;
+  }
+
+  return false;
+}
 
 export const RULE_IDS = Object.freeze([
   'device_registered',
-  'step_up_required'
+  'step_up_required',
+  'resource_zone'
 ]);
 
 export async function decide(request) {
@@ -68,6 +86,15 @@ export async function decide(request) {
   }
 
   const suspicious = needsStepUp(connectionInput);
+  if (!isAllowedZone(request)) {
+    return {
+      schema: 'aleph.decision.v1',
+      requestId: request.requestId,
+      decision: 'deny',
+      reasonCode: 'resource_access_denied',
+      ruleIds: ['resource_zone'],
+    };
+  }
   const verified = request?.stepUp?.verified === true;
 
   const additionalCheck = suspicious && !verified;
