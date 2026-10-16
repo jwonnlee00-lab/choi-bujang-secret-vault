@@ -54,7 +54,10 @@ export function isAllowedZone(request) {
     return false;
   }
 
-  if (method === 'GET' && route === 'GET /api/notes/:id') {
+  if (
+    method === 'GET' &&
+    (route === 'GET /notes/:id' || route === 'GET /api/notes/:id')
+  ) {
     return true;
   }
 
